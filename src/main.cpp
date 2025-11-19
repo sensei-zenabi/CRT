@@ -741,6 +741,12 @@ int main(int argc, char** argv)
 
     bool captureWarningPrinted = false;
 
+    float originalOpacity = 1.0f;
+    if (SDL_GetWindowOpacity(window, &originalOpacity) != 0)
+    {
+        originalOpacity = 1.0f;
+    }
+
     while (running)
     {
         SDL_Event event;
@@ -772,13 +778,24 @@ int main(int argc, char** argv)
         FramebufferPair* readTarget = &framebufferB;
         GLuint inputTexture = captureTexture;
 
+        bool overlayHidden = false;
         if (captureContext)
         {
+            if (SDL_SetWindowOpacity(window, 0.0f) == 0)
+            {
+                overlayHidden = true;
+            }
+
             const bool captured = capture_root_to_texture(*captureContext, width, height, captureTexture);
             if (!captured && !captureWarningPrinted)
             {
                 std::cerr << "Warning: failed to capture root window; using last successful frame if available." << '\n';
                 captureWarningPrinted = true;
+            }
+
+            if (overlayHidden)
+            {
+                SDL_SetWindowOpacity(window, originalOpacity);
             }
         }
 
