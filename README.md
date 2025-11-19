@@ -45,9 +45,8 @@ Launch the transparent fullscreen overlay with one or more shader files:
 * Press **F12** to exit.
 * On X11, the overlay captures the desktop each frame and feeds it into the shader chain so effects
   apply to the current screen contents. To avoid the overlay feeding back into its own capture, the
-  window briefly hides itself from the compositor while grabbing the desktop, then shows again
-  before drawing. Without X11, the overlay remains transparent with only shader-driven visuals
-  visible.
+  window temporarily drops its opacity to 0 while grabbing the desktop and restores it before
+  drawing. Without X11, the overlay remains transparent with only shader-driven visuals visible.
 
 Shaders are compiled as OpenGL fragment shaders. They receive common uniforms such as `Texture`,
 `InputSize`, `TextureSize`, `OutputSize`, `FrameCount`, and `FrameDirection` for compatibility with

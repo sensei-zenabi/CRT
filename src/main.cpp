@@ -626,16 +626,6 @@ void setup_quad(GLuint& vao, GLuint& vbo)
     glBindVertexArray(0);
 }
 
-void present_transparent_overlay(SDL_Window* window, int width, int height)
-{
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDisable(GL_BLEND);
-    glViewport(0, 0, width, height);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    SDL_GL_SwapWindow(window);
-}
-
 } // namespace
 
 int main(int argc, char** argv)
@@ -798,14 +788,21 @@ int main(int argc, char** argv)
 
         if (captureContext)
         {
-            const Uint32 windowFlags = SDL_GetWindowFlags(window);
-            const bool wasShown = (windowFlags & SDL_WINDOW_SHOWN) != 0;
+            float previousOpacity = 1.0f;
+            bool opacityAdjusted = false;
 
-            if (wasShown)
+            if (SDL_GetWindowOpacity(window, &previousOpacity) == 0 && previousOpacity > 0.0f)
             {
-                SDL_HideWindow(window);
-                SDL_PumpEvents();
-                present_transparent_overlay(window, width, height);
+                if (SDL_SetWindowOpacity(window, 0.0f) == 0)
+                {
+                    opacityAdjusted = true;
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    glDisable(GL_BLEND);
+                    glViewport(0, 0, width, height);
+                    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    SDL_GL_SwapWindow(window);
+                }
             }
 
             const bool captured = capture_root_to_texture(*captureContext, width, height, captureTexture);
@@ -815,10 +812,9 @@ int main(int argc, char** argv)
                 captureWarningPrinted = true;
             }
 
-            if (wasShown)
+            if (opacityAdjusted)
             {
-                SDL_ShowWindow(window);
-                SDL_PumpEvents();
+                SDL_SetWindowOpacity(window, previousOpacity);
             }
         }
 
