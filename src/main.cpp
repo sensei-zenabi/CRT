@@ -66,7 +66,6 @@ constexpr std::string_view kUsage =
     std::ostringstream stream;
     stream << "#version 330 core\n";
     stream << "#define FRAGMENT 1\n";
-    stream << "#define GL_ES 0\n";
     stream << source;
     return stream.str();
 }
