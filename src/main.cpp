@@ -669,6 +669,8 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    SDL_SetWindowAlwaysOnTop(window, SDL_TRUE);
+
     SDL_GLContext context = SDL_GL_CreateContext(window);
     if (context == nullptr)
     {
@@ -796,12 +798,6 @@ int main(int argc, char** argv)
                 if (SDL_SetWindowOpacity(window, 0.0f) == 0)
                 {
                     opacityAdjusted = true;
-                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                    glDisable(GL_BLEND);
-                    glViewport(0, 0, width, height);
-                    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-                    glClear(GL_COLOR_BUFFER_BIT);
-                    SDL_GL_SwapWindow(window);
                 }
             }
 
