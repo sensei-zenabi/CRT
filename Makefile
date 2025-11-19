@@ -3,9 +3,14 @@
 CXX ?= g++
 CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra -Werror -pedantic
 PKG_CONFIG ?= pkg-config
+SDL2_CONFIG ?= sdl2-config
 
-SDL2_CFLAGS := $(shell $(PKG_CONFIG) --cflags sdl2)
-SDL2_LIBS := $(shell $(PKG_CONFIG) --libs sdl2)
+SDL2_CFLAGS := $(shell $(PKG_CONFIG) --cflags sdl2 2>/dev/null)
+SDL2_LIBS := $(shell $(PKG_CONFIG) --libs sdl2 2>/dev/null)
+ifeq ($(strip $(SDL2_LIBS)),)
+SDL2_CFLAGS := $(shell $(SDL2_CONFIG) --cflags 2>/dev/null)
+SDL2_LIBS := $(shell $(SDL2_CONFIG) --libs 2>/dev/null)
+endif
 
 ifeq ($(strip $(SDL2_LIBS)),)
 $(error SDL2 development files not found; install SDL2 and ensure pkg-config can find `sdl2`)

@@ -2,6 +2,14 @@
 
 CRT emulator overlay built with SDL2 and OpenGL.
 
+## Setup
+
+On Debian/Ubuntu-based systems you can install the required development packages with:
+
+```bash
+./setup.sh
+```
+
 ## Building
 
 You can build either with the provided Makefile or with CMake:
