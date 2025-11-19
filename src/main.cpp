@@ -537,7 +537,7 @@ void set_common_uniforms(const GlPass& pass, int width, int height, float timeSe
 
 void render_pass(const GlPass& pass, GLuint inputTexture, int width, int height, float timeSeconds,
                  int frameCount, GLuint noiseTexture, GLuint playTexture,
-                 const FramebufferPair* target)
+                 const FramebufferPair* target, bool enableBlending, bool clearBeforeDraw)
 {
     if (target != nullptr)
     {
@@ -549,8 +549,22 @@ void render_pass(const GlPass& pass, GLuint inputTexture, int width, int height,
     }
 
     glViewport(0, 0, width, height);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+
+    if (enableBlending)
+    {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    else
+    {
+        glDisable(GL_BLEND);
+    }
+
+    if (clearBeforeDraw)
+    {
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
 
     glUseProgram(pass.program);
     set_common_uniforms(pass, width, height, timeSeconds, frameCount);
@@ -610,6 +624,16 @@ void setup_quad(GLuint& vao, GLuint& vbo)
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+}
+
+void present_transparent_overlay(SDL_Window* window, int width, int height)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_BLEND);
+    glViewport(0, 0, width, height);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    SDL_GL_SwapWindow(window);
 }
 
 } // namespace
@@ -786,6 +810,11 @@ int main(int argc, char** argv)
                 overlayHidden = true;
             }
 
+            if (overlayHidden)
+            {
+                present_transparent_overlay(window, width, height);
+            }
+
             const bool captured = capture_root_to_texture(*captureContext, width, height, captureTexture);
             if (!captured && !captureWarningPrinted)
             {
@@ -799,6 +828,9 @@ int main(int argc, char** argv)
             }
         }
 
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
         for (std::size_t i = 0; i < passes.size(); ++i)
         {
             const bool lastPass = (i + 1 == passes.size());
@@ -806,14 +838,12 @@ int main(int argc, char** argv)
             if (lastPass)
             {
                 render_pass(passes[i], inputTexture, width, height, elapsedSeconds, frameCount,
-                            noiseTexture, playTexture,
-                            nullptr);
+                            noiseTexture, playTexture, nullptr, true, true);
             }
             else
             {
                 render_pass(passes[i], inputTexture, width, height, elapsedSeconds, frameCount,
-                            noiseTexture, playTexture,
-                            writeTarget);
+                            noiseTexture, playTexture, writeTarget, false, true);
                 std::swap(writeTarget, readTarget);
                 inputTexture = readTarget->texture;
             }
