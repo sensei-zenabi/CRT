@@ -43,8 +43,11 @@ Launch the transparent fullscreen overlay with one or more shader files:
 * The window is borderless, fullscreen, and always on top.
 * Keyboard, mouse, and other input are passed through to the desktop beneath.
 * Press **F12** to exit.
+* On X11, the overlay captures the desktop each frame and feeds it into the shader chain so effects
+  apply to the current screen contents. Without X11, the overlay remains transparent with only
+  shader-driven visuals visible.
 
 Shaders are compiled as OpenGL fragment shaders. They receive common uniforms such as `Texture`,
 `InputSize`, `TextureSize`, `OutputSize`, `FrameCount`, and `FrameDirection` for compatibility with
 many libretro-style GLSL files. The overlay clears to transparent each frame so only shader output
-is visible on top of the desktop.
+is visible on top of the desktop while the captured desktop acts as the `Texture` input.

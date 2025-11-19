@@ -21,6 +21,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/shape.h>
+#include <X11/Xutil.h>
 #endif
 
 namespace
@@ -43,6 +44,12 @@ struct FramebufferPair
 {
     GLuint framebuffer{0};
     GLuint texture{0};
+};
+
+struct CaptureContext
+{
+    Display* display{nullptr};
+    ::Window root{0};
 };
 
 constexpr std::string_view kUsage =
@@ -254,6 +261,89 @@ void destroy_framebuffer_pair(FramebufferPair& pair)
     return true;
 }
 
+[[nodiscard]] std::optional<CaptureContext> get_capture_context(SDL_Window* window)
+{
+#ifdef CRT_ENABLE_X11
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (SDL_GetWindowWMInfo(window, &info) == SDL_TRUE && info.subsystem == SDL_SYSWM_X11)
+    {
+        CaptureContext context{};
+        context.display = info.info.x11.display;
+        context.root = DefaultRootWindow(context.display);
+        return context;
+    }
+#endif
+    return std::nullopt;
+}
+
+[[nodiscard]] bool capture_root_to_texture(const CaptureContext& context, int width, int height,
+                                           GLuint texture)
+{
+#ifdef CRT_ENABLE_X11
+    if (context.display == nullptr || context.root == 0)
+    {
+        return false;
+    }
+
+    XImage* image = XGetImage(context.display, context.root, 0, 0, static_cast<unsigned int>(width),
+                              static_cast<unsigned int>(height), AllPlanes, ZPixmap);
+    if (image == nullptr)
+    {
+        return false;
+    }
+
+    std::vector<unsigned char> converted;
+    GLenum format = GL_BGRA;
+    GLenum type = GL_UNSIGNED_BYTE;
+
+    if (image->bits_per_pixel == 24)
+    {
+        converted.resize(static_cast<std::size_t>(width * height * 4));
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < width; ++x)
+            {
+                const char* src = image->data + y * image->bytes_per_line + x * 3;
+                const std::size_t dstIndex = static_cast<std::size_t>((y * width + x) * 4);
+                converted[dstIndex + 0] = static_cast<unsigned char>(src[0]);
+                converted[dstIndex + 1] = static_cast<unsigned char>(src[1]);
+                converted[dstIndex + 2] = static_cast<unsigned char>(src[2]);
+                converted[dstIndex + 3] = 0xFF;
+            }
+        }
+        format = GL_BGRA;
+        type = GL_UNSIGNED_BYTE;
+    }
+    else if (image->bits_per_pixel == 32)
+    {
+        // 32-bit XImage is typically BGRA or ARGB; using BGRA matches the default masks.
+        format = GL_BGRA;
+        type = GL_UNSIGNED_BYTE;
+    }
+    else
+    {
+        XDestroyImage(image);
+        return false;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    const void* pixels = converted.empty() ? static_cast<const void*>(image->data)
+                                           : static_cast<const void*>(converted.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, format, type, pixels);
+    const GLenum error = glGetError();
+    XDestroyImage(image);
+    return error == GL_NO_ERROR;
+#else
+    (void)context;
+    (void)width;
+    (void)height;
+    (void)texture;
+    return false;
+#endif
+}
+
 [[nodiscard]] bool parse_arguments(int argc, char** argv, std::vector<std::filesystem::path>& shaders)
 {
     for (int i = 1; i < argc; ++i)
@@ -285,23 +375,23 @@ void destroy_framebuffer_pair(FramebufferPair& pair)
 }
 
 bool recreate_buffers_if_needed(int width, int height, FramebufferPair& a, FramebufferPair& b,
-                                GLuint& transparentTexture)
+                                GLuint& captureTexture)
 {
     static int currentWidth = 0;
     static int currentHeight = 0;
 
     if (width == currentWidth && height == currentHeight && a.texture != 0 && b.texture != 0 &&
-        transparentTexture != 0)
+        captureTexture != 0)
     {
         return true;
     }
 
     destroy_framebuffer_pair(a);
     destroy_framebuffer_pair(b);
-    if (transparentTexture != 0)
+    if (captureTexture != 0)
     {
-        glDeleteTextures(1, &transparentTexture);
-        transparentTexture = 0;
+        glDeleteTextures(1, &captureTexture);
+        captureTexture = 0;
     }
 
     if (!create_framebuffer_pair(a, width, height) || !create_framebuffer_pair(b, width, height))
@@ -310,9 +400,9 @@ bool recreate_buffers_if_needed(int width, int height, FramebufferPair& a, Frame
         return false;
     }
 
-    if (!create_texture(transparentTexture, width, height))
+    if (!create_texture(captureTexture, width, height))
     {
-        std::cerr << "Failed to create transparent texture" << '\n';
+        std::cerr << "Failed to create capture texture" << '\n';
         return false;
     }
 
@@ -481,6 +571,12 @@ int main(int argc, char** argv)
         std::cerr << "Warning: failed to configure input pass-through" << '\n';
     }
 
+    const auto captureContext = get_capture_context(window);
+    if (!captureContext)
+    {
+        std::cerr << "Warning: X11 capture unavailable; overlay will be transparent" << '\n';
+    }
+
     std::vector<GlPass> passes;
     passes.reserve(shaderPaths.size());
     for (const auto& path : shaderPaths)
@@ -502,12 +598,12 @@ int main(int argc, char** argv)
 
     FramebufferPair framebufferA{};
     FramebufferPair framebufferB{};
-    GLuint transparentTexture = 0;
+    GLuint captureTexture = 0;
 
     int width = 0;
     int height = 0;
     SDL_GetWindowSize(window, &width, &height);
-    if (!recreate_buffers_if_needed(width, height, framebufferA, framebufferB, transparentTexture))
+    if (!recreate_buffers_if_needed(width, height, framebufferA, framebufferB, captureTexture))
     {
         SDL_GL_DeleteContext(context);
         SDL_DestroyWindow(window);
@@ -542,8 +638,7 @@ int main(int argc, char** argv)
             {
                 width = event.window.data1;
                 height = event.window.data2;
-                recreate_buffers_if_needed(width, height, framebufferA, framebufferB,
-                                           transparentTexture);
+                recreate_buffers_if_needed(width, height, framebufferA, framebufferB, captureTexture);
             }
         }
 
@@ -553,7 +648,12 @@ int main(int argc, char** argv)
 
         FramebufferPair* writeTarget = &framebufferA;
         FramebufferPair* readTarget = &framebufferB;
-        GLuint inputTexture = transparentTexture;
+        GLuint inputTexture = captureTexture;
+
+        if (captureContext)
+        {
+            capture_root_to_texture(*captureContext, width, height, captureTexture);
+        }
 
         for (std::size_t i = 0; i < passes.size(); ++i)
         {
@@ -579,9 +679,9 @@ int main(int argc, char** argv)
     destroy_framebuffer_pair(framebufferA);
     destroy_framebuffer_pair(framebufferB);
 
-    if (transparentTexture != 0)
+    if (captureTexture != 0)
     {
-        glDeleteTextures(1, &transparentTexture);
+        glDeleteTextures(1, &captureTexture);
     }
 
     if (vbo != 0)
