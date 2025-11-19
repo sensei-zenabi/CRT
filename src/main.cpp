@@ -15,6 +15,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <random>
 #include <vector>
 
 #ifdef CRT_ENABLE_X11
@@ -30,6 +31,8 @@ struct GlPass
 {
     GLuint program{0};
     GLint textureLocation{-1};
+    GLint playTextureLocation{-1};
+    GLint noiseTextureLocation{-1};
     GLint resolutionLocation{-1};
     GLint timeLocation{-1};
     GLint frameCountLocation{-1};
@@ -37,7 +40,6 @@ struct GlPass
     GLint inputSizeLocation{-1};
     GLint outputSizeLocation{-1};
     GLint textureSizeLocation{-1};
-    GLint auxiliaryTextureLocation{-1};
 };
 
 struct FramebufferPair
@@ -70,10 +72,25 @@ constexpr std::string_view kUsage =
 
 [[nodiscard]] std::string build_fragment_source(const std::string& source)
 {
+    std::istringstream input(source);
+    std::string line;
+    std::ostringstream stripped;
+    bool firstLine = true;
+    while (std::getline(input, line))
+    {
+        if (firstLine && line.rfind("#version", 0) == 0)
+        {
+            firstLine = false;
+            continue;
+        }
+        firstLine = false;
+        stripped << line << '\n';
+    }
+
     std::ostringstream stream;
     stream << "#version 330 core\n";
     stream << "#define FRAGMENT 1\n";
-    stream << source;
+    stream << stripped.str();
     return stream.str();
 }
 
@@ -170,6 +187,8 @@ constexpr std::string_view kUsage =
     }
 
     pass.textureLocation = glGetUniformLocation(pass.program, "Texture");
+    pass.playTextureLocation = glGetUniformLocation(pass.program, "play");
+    pass.noiseTextureLocation = glGetUniformLocation(pass.program, "noise1");
     pass.resolutionLocation = glGetUniformLocation(pass.program, "uResolution");
     pass.timeLocation = glGetUniformLocation(pass.program, "uTime");
     pass.frameCountLocation = glGetUniformLocation(pass.program, "FrameCount");
@@ -177,7 +196,6 @@ constexpr std::string_view kUsage =
     pass.inputSizeLocation = glGetUniformLocation(pass.program, "InputSize");
     pass.outputSizeLocation = glGetUniformLocation(pass.program, "OutputSize");
     pass.textureSizeLocation = glGetUniformLocation(pass.program, "TextureSize");
-    pass.auxiliaryTextureLocation = glGetUniformLocation(pass.program, "play");
 
     return pass;
 }
@@ -211,6 +229,79 @@ bool create_framebuffer_pair(FramebufferPair& pair, int width, int height)
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return status == GL_FRAMEBUFFER_COMPLETE;
+}
+
+bool create_noise_texture(GLuint& texture, int size)
+{
+    std::vector<unsigned char> noise(static_cast<std::size_t>(size * size * 4u));
+    std::mt19937 rng(1337u);
+    std::uniform_int_distribution<int> dist(0, 255);
+    for (auto& value : noise)
+    {
+        value = static_cast<unsigned char>(dist(rng));
+    }
+
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, noise.data());
+    const GLenum error = glGetError();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return error == GL_NO_ERROR;
+}
+
+bool create_play_overlay_texture(GLuint& texture, int width, int height)
+{
+    std::vector<unsigned char> pixels(static_cast<std::size_t>(width * height * 4u), 0);
+
+    const float ax = static_cast<float>(width) * 0.28f;
+    const float ay = static_cast<float>(height) * 0.25f;
+    const float bx = ax;
+    const float by = static_cast<float>(height) * 0.75f;
+    const float cx = static_cast<float>(width) * 0.78f;
+    const float cy = static_cast<float>(height) * 0.50f;
+
+    auto sign = [](float px, float py, float x1, float y1, float x2, float y2) {
+        return (px - x2) * (y1 - y2) - (x1 - x2) * (py - y2);
+    };
+
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            const float px = static_cast<float>(x) + 0.5f;
+            const float py = static_cast<float>(y) + 0.5f;
+
+            const bool b1 = sign(px, py, ax, ay, bx, by) < 0.0f;
+            const bool b2 = sign(px, py, bx, by, cx, cy) < 0.0f;
+            const bool b3 = sign(px, py, cx, cy, ax, ay) < 0.0f;
+
+            const bool inside = (b1 == b2) && (b2 == b3);
+            if (inside)
+            {
+                const std::size_t idx = static_cast<std::size_t>((y * width + x) * 4);
+                pixels[idx + 0] = 0xFF;
+                pixels[idx + 1] = 0xFF;
+                pixels[idx + 2] = 0xFF;
+                pixels[idx + 3] = 0xD0;
+            }
+        }
+    }
+
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 pixels.data());
+    const GLenum error = glGetError();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return error == GL_NO_ERROR;
 }
 
 void destroy_framebuffer_pair(FramebufferPair& pair)
@@ -444,7 +535,8 @@ void set_common_uniforms(const GlPass& pass, int width, int height, float timeSe
     }
 }
 
-void render_pass(const GlPass& pass, GLuint inputTexture, int width, int height,
+void render_pass(const GlPass& pass, GLuint inputTexture, int width, int height, float timeSeconds,
+                 int frameCount, GLuint noiseTexture, GLuint playTexture,
                  const FramebufferPair* target)
 {
     if (target != nullptr)
@@ -461,27 +553,35 @@ void render_pass(const GlPass& pass, GLuint inputTexture, int width, int height,
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(pass.program);
+    set_common_uniforms(pass, width, height, timeSeconds, frameCount);
 
+    GLint textureUnit = 0;
     if (pass.textureLocation >= 0)
     {
-        glUniform1i(pass.textureLocation, 0);
-    }
-    if (pass.auxiliaryTextureLocation >= 0)
-    {
-        glUniform1i(pass.auxiliaryTextureLocation, 1);
-    }
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, inputTexture);
-    if (pass.auxiliaryTextureLocation >= 0)
-    {
-        glActiveTexture(GL_TEXTURE1);
+        glUniform1i(pass.textureLocation, textureUnit);
+        glActiveTexture(GL_TEXTURE0 + textureUnit);
         glBindTexture(GL_TEXTURE_2D, inputTexture);
-        glActiveTexture(GL_TEXTURE0);
+        ++textureUnit;
+    }
+    if (pass.playTextureLocation >= 0)
+    {
+        glUniform1i(pass.playTextureLocation, textureUnit);
+        glActiveTexture(GL_TEXTURE0 + textureUnit);
+        const GLuint overlay = playTexture != 0 ? playTexture : inputTexture;
+        glBindTexture(GL_TEXTURE_2D, overlay);
+        ++textureUnit;
+    }
+    if (pass.noiseTextureLocation >= 0 && noiseTexture != 0)
+    {
+        glUniform1i(pass.noiseTextureLocation, textureUnit);
+        glActiveTexture(GL_TEXTURE0 + textureUnit);
+        glBindTexture(GL_TEXTURE_2D, noiseTexture);
+        ++textureUnit;
     }
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glUseProgram(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -599,12 +699,32 @@ int main(int argc, char** argv)
     FramebufferPair framebufferA{};
     FramebufferPair framebufferB{};
     GLuint captureTexture = 0;
+    GLuint noiseTexture = 0;
+    GLuint playTexture = 0;
 
     int width = 0;
     int height = 0;
     SDL_GetWindowSize(window, &width, &height);
     if (!recreate_buffers_if_needed(width, height, framebufferA, framebufferB, captureTexture))
     {
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    if (!create_noise_texture(noiseTexture, 256))
+    {
+        std::cerr << "Failed to create noise texture" << '\n';
+        SDL_GL_DeleteContext(context);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 1;
+    }
+
+    if (!create_play_overlay_texture(playTexture, 192, 96))
+    {
+        std::cerr << "Failed to create play overlay texture" << '\n';
         SDL_GL_DeleteContext(context);
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -665,15 +785,18 @@ int main(int argc, char** argv)
         for (std::size_t i = 0; i < passes.size(); ++i)
         {
             const bool lastPass = (i + 1 == passes.size());
-            set_common_uniforms(passes[i], width, height, elapsedSeconds, frameCount);
 
             if (lastPass)
             {
-                render_pass(passes[i], inputTexture, width, height, nullptr);
+                render_pass(passes[i], inputTexture, width, height, elapsedSeconds, frameCount,
+                            noiseTexture, playTexture,
+                            nullptr);
             }
             else
             {
-                render_pass(passes[i], inputTexture, width, height, writeTarget);
+                render_pass(passes[i], inputTexture, width, height, elapsedSeconds, frameCount,
+                            noiseTexture, playTexture,
+                            writeTarget);
                 std::swap(writeTarget, readTarget);
                 inputTexture = readTarget->texture;
             }
@@ -689,6 +812,14 @@ int main(int argc, char** argv)
     if (captureTexture != 0)
     {
         glDeleteTextures(1, &captureTexture);
+    }
+    if (noiseTexture != 0)
+    {
+        glDeleteTextures(1, &noiseTexture);
+    }
+    if (playTexture != 0)
+    {
+        glDeleteTextures(1, &playTexture);
     }
 
     if (vbo != 0)

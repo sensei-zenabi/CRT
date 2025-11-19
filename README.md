@@ -51,3 +51,18 @@ Shaders are compiled as OpenGL fragment shaders. They receive common uniforms su
 `InputSize`, `TextureSize`, `OutputSize`, `FrameCount`, and `FrameDirection` for compatibility with
 many libretro-style GLSL files. The overlay clears to transparent each frame so only shader output
 is visible on top of the desktop while the captured desktop acts as the `Texture` input.
+
+### Shader compatibility
+
+All bundled shaders in `./shaders` are supported individually or chained:
+
+* `fakelottes-geom.glsl` runs directly on the captured desktop buffer.
+* `film_noise.glsl` automatically receives a procedurally generated repeating `noise1` texture for
+  its grain and scratch sampling so it does not depend on external LUT assets.
+* `vhs.glsl` receives a generated semi-transparent “play” overlay texture so its `play` sampler can
+  display the expected on-screen-display without extra assets while still reading the captured
+  desktop as the main `Texture` input.
+
+Shaders are ping‑ponged through framebuffer objects in the order provided on the command line, so
+mixing and matching the shipped GLSL files (or your own) will apply them sequentially on the live
+desktop content.
