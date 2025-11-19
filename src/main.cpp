@@ -619,6 +619,8 @@ int main(int argc, char** argv)
     auto startTime = std::chrono::steady_clock::now();
     int frameCount = 0;
 
+    bool captureWarningPrinted = false;
+
     while (running)
     {
         SDL_Event event;
@@ -652,7 +654,12 @@ int main(int argc, char** argv)
 
         if (captureContext)
         {
-            capture_root_to_texture(*captureContext, width, height, captureTexture);
+            const bool captured = capture_root_to_texture(*captureContext, width, height, captureTexture);
+            if (!captured && !captureWarningPrinted)
+            {
+                std::cerr << "Warning: failed to capture root window; using last successful frame if available." << '\n';
+                captureWarningPrinted = true;
+            }
         }
 
         for (std::size_t i = 0; i < passes.size(); ++i)
