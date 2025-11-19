@@ -562,7 +562,8 @@ void render_pass(const GlPass& pass, GLuint inputTexture, int width, int height,
 
     if (clearBeforeDraw)
     {
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        const float clearAlpha = target == nullptr ? 1.0f : 0.0f;
+        glClearColor(0.0f, 0.0f, 0.0f, clearAlpha);
         glClear(GL_COLOR_BUFFER_BIT);
     }
 
@@ -824,7 +825,7 @@ int main(int argc, char** argv)
             if (lastPass)
             {
                 render_pass(passes[i], inputTexture, width, height, elapsedSeconds, frameCount,
-                            noiseTexture, playTexture, nullptr, true, true);
+                            noiseTexture, playTexture, nullptr, false, true);
             }
             else
             {
