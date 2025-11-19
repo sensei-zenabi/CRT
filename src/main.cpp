@@ -765,12 +765,6 @@ int main(int argc, char** argv)
 
     bool captureWarningPrinted = false;
 
-    float originalOpacity = 1.0f;
-    if (SDL_GetWindowOpacity(window, &originalOpacity) != 0)
-    {
-        originalOpacity = 1.0f;
-    }
-
     while (running)
     {
         SDL_Event event;
@@ -802,16 +796,15 @@ int main(int argc, char** argv)
         FramebufferPair* readTarget = &framebufferB;
         GLuint inputTexture = captureTexture;
 
-        bool overlayHidden = false;
         if (captureContext)
         {
-            if (SDL_SetWindowOpacity(window, 0.0f) == 0)
-            {
-                overlayHidden = true;
-            }
+            const Uint32 windowFlags = SDL_GetWindowFlags(window);
+            const bool wasShown = (windowFlags & SDL_WINDOW_SHOWN) != 0;
 
-            if (overlayHidden)
+            if (wasShown)
             {
+                SDL_HideWindow(window);
+                SDL_PumpEvents();
                 present_transparent_overlay(window, width, height);
             }
 
@@ -822,9 +815,10 @@ int main(int argc, char** argv)
                 captureWarningPrinted = true;
             }
 
-            if (overlayHidden)
+            if (wasShown)
             {
-                SDL_SetWindowOpacity(window, originalOpacity);
+                SDL_ShowWindow(window);
+                SDL_PumpEvents();
             }
         }
 
