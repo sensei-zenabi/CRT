@@ -13,6 +13,14 @@
 #include <string_view>
 #include <vector>
 
+#if __has_include(<X11/Xlib.h>) && __has_include(<X11/Xutil.h>)
+#define CRT_HAS_X11 1
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#else
+#define CRT_HAS_X11 0
+#endif
+
 namespace
 {
     struct ShaderProgram
@@ -248,6 +256,141 @@ namespace
         return data;
     }
 
+    int maskShift(unsigned long mask)
+    {
+        if (mask == 0)
+        {
+            return 0;
+        }
+        int shift = 0;
+        while ((mask & 1u) == 0u)
+        {
+            mask >>= 1;
+            ++shift;
+        }
+        return shift;
+    }
+
+    int maskSize(unsigned long mask)
+    {
+        int size = 0;
+        while (mask)
+        {
+            size += static_cast<int>(mask & 1u);
+            mask >>= 1;
+        }
+        return size;
+    }
+
+    float normalizeChannel(unsigned long value, unsigned long mask)
+    {
+        const int shift = maskShift(mask);
+        const int bits = maskSize(mask);
+        const unsigned long component = (value & mask) >> shift;
+        if (bits <= 0)
+        {
+            return 0.0f;
+        }
+        const unsigned long maxValue = (1u << bits) - 1u;
+        return static_cast<float>(component) / static_cast<float>(maxValue);
+    }
+
+#if CRT_HAS_X11
+    class ScreenCapture
+    {
+    public:
+        ScreenCapture()
+        {
+            display_ = XOpenDisplay(nullptr);
+            if (display_)
+            {
+                root_ = DefaultRootWindow(display_);
+            }
+        }
+
+        ~ScreenCapture()
+        {
+            releaseImage();
+            if (display_)
+            {
+                XCloseDisplay(display_);
+            }
+        }
+
+        bool grab(std::vector<std::uint8_t> &buffer, int &width, int &height)
+        {
+            if (!display_)
+            {
+                return false;
+            }
+
+            XWindowAttributes attrs;
+            if (XGetWindowAttributes(display_, root_, &attrs) == 0)
+            {
+                return false;
+            }
+
+            width = attrs.width;
+            height = attrs.height;
+
+            releaseImage();
+            image_ = XGetImage(display_, root_, 0, 0, static_cast<unsigned int>(width), static_cast<unsigned int>(height),
+                               AllPlanes, ZPixmap);
+            if (!image_ || (image_->bits_per_pixel != 32 && image_->bits_per_pixel != 24))
+            {
+                releaseImage();
+                return false;
+            }
+
+            buffer.resize(static_cast<size_t>(width * height * 4));
+            const int bytesPerPixel = image_->bits_per_pixel / 8;
+            for (int y = 0; y < height; ++y)
+            {
+                const unsigned char *row = reinterpret_cast<const unsigned char *>(image_->data + y * image_->bytes_per_line);
+                for (int x = 0; x < width; ++x)
+                {
+                    const unsigned long pixel = *reinterpret_cast<const unsigned long *>(row + static_cast<size_t>(x * bytesPerPixel));
+                    const float r = normalizeChannel(pixel, image_->red_mask);
+                    const float g = normalizeChannel(pixel, image_->green_mask);
+                    const float b = normalizeChannel(pixel, image_->blue_mask);
+
+                    const size_t idx = static_cast<size_t>((y * width + x) * 4);
+                    buffer[idx + 0] = static_cast<std::uint8_t>(r * 255.0f);
+                    buffer[idx + 1] = static_cast<std::uint8_t>(g * 255.0f);
+                    buffer[idx + 2] = static_cast<std::uint8_t>(b * 255.0f);
+                    buffer[idx + 3] = 255;
+                }
+            }
+
+            return true;
+        }
+
+    private:
+        void releaseImage()
+        {
+            if (image_)
+            {
+                image_->data = nullptr;
+                XDestroyImage(image_);
+                image_ = nullptr;
+            }
+        }
+
+        Display *display_ = nullptr;
+        Window root_ = 0;
+        XImage *image_ = nullptr;
+    };
+#else
+    class ScreenCapture
+    {
+    public:
+        bool grab(std::vector<std::uint8_t> &, int &, int &)
+        {
+            return false;
+        }
+    };
+#endif
+
     Options parseArgs(int argc, char **argv)
     {
         Options options;
@@ -351,11 +494,11 @@ namespace
                         int width,
                         int height,
                         int frameCount,
-                        float windowOpacity)
+                        float windowOpacity,
+                        int inputWidth,
+                        int inputHeight)
     {
         GLuint inputTexture = baseTexture;
-        int inputWidth = width;
-        int inputHeight = height;
 
         for (size_t index = 0; index < pipeline.size(); ++index)
         {
@@ -423,6 +566,11 @@ int main(int argc, char **argv)
         const int patternWidth = options.width;
         const int patternHeight = options.height;
         const auto pattern = buildTestPattern(patternWidth, patternHeight);
+
+        ScreenCapture capture;
+        std::vector<std::uint8_t> captureBuffer;
+        int sourceWidth = patternWidth;
+        int sourceHeight = patternHeight;
         GLuint baseTexture = createTexture(patternWidth, patternHeight, pattern);
 
         std::vector<RenderTarget> targets;
@@ -454,7 +602,40 @@ int main(int argc, char **argv)
                 }
             }
 
-            renderPipeline(pipeline, targets, vao, baseTexture, options.width, options.height, frameCount, options.opacity);
+            int captureWidth = 0;
+            int captureHeight = 0;
+            bool captured = capture.grab(captureBuffer, captureWidth, captureHeight);
+
+            if (captured)
+            {
+                const bool sizeChanged = captureWidth != sourceWidth || captureHeight != sourceHeight;
+                if (sizeChanged)
+                {
+                    glDeleteTextures(1, &baseTexture);
+                    baseTexture = createTexture(captureWidth, captureHeight, captureBuffer);
+                    sourceWidth = captureWidth;
+                    sourceHeight = captureHeight;
+                }
+                else
+                {
+                    glBindTexture(GL_TEXTURE_2D, baseTexture);
+                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, captureWidth, captureHeight, GL_RGBA, GL_UNSIGNED_BYTE,
+                                    captureBuffer.data());
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                }
+                sourceWidth = captureWidth;
+                sourceHeight = captureHeight;
+            }
+            else if (sourceWidth != patternWidth || sourceHeight != patternHeight)
+            {
+                glDeleteTextures(1, &baseTexture);
+                baseTexture = createTexture(patternWidth, patternHeight, pattern);
+                sourceWidth = patternWidth;
+                sourceHeight = patternHeight;
+            }
+
+            renderPipeline(pipeline, targets, vao, baseTexture, options.width, options.height, frameCount, options.opacity,
+                           sourceWidth, sourceHeight);
             SDL_GL_SwapWindow(window);
             frameCount++;
         }

@@ -267,6 +267,8 @@ inline void glBindTexture(GLenum, GLuint) {}
 
 inline void glTexImage2D(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *) {}
 
+inline void glTexSubImage2D(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *) {}
+
 inline void glTexParameteri(GLenum, GLenum, GLint) {}
 
 inline void glActiveTexture(GLenum) {}
