@@ -30,4 +30,4 @@ The window is composited with your desktop. Control how much of the desktop show
 
 ### Desktop capture
 
-When running on X11, the app captures your root window every frame and feeds it through the shader chain so the effects alter whatever is visible on your desktop. If X11 capture is unavailable (for example on unsupported platforms), the app falls back to the built-in test pattern.
+When running on X11, the app captures your root window every frame and feeds it through the shader chain so the effects alter whatever is visible on your desktop. The window briefly hides itself during capture so your own overlay is not re-captured into the feed. If X11 capture is unavailable (for example on unsupported platforms), the app falls back to the built-in test pattern.
