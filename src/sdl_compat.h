@@ -112,6 +112,30 @@ inline int SDL_GL_SetSwapInterval(int)
 
 inline void SDL_GL_SwapWindow(SDL_Window *) {}
 
+inline void SDL_GetWindowPosition(SDL_Window *, int *x, int *y)
+{
+    if (x)
+    {
+        *x = 0;
+    }
+    if (y)
+    {
+        *y = 0;
+    }
+}
+
+inline void SDL_GetWindowSize(SDL_Window *, int *w, int *h)
+{
+    if (w)
+    {
+        *w = 0;
+    }
+    if (h)
+    {
+        *h = 0;
+    }
+}
+
 inline int SDL_PollEvent(SDL_Event *)
 {
     return 0;
@@ -128,6 +152,7 @@ constexpr GLenum GL_FLOAT = 0x1406;
 constexpr GLboolean GL_FALSE = 0;
 constexpr GLenum GL_TRIANGLES = 0x0004;
 constexpr GLenum GL_TEXTURE0 = 0x84C0;
+constexpr GLenum GL_TEXTURE1 = 0x84C1;
 constexpr GLenum GL_TEXTURE_2D = 0x0DE1;
 constexpr GLenum GL_RGBA8 = 0x8058;
 constexpr GLenum GL_RGBA = 0x1908;
@@ -206,6 +231,8 @@ inline void glUniform1f(GLint, GLfloat) {}
 
 inline void glUniform2f(GLint, GLfloat, GLfloat) {}
 
+inline void glUniform4f(GLint, GLfloat, GLfloat, GLfloat, GLfloat) {}
+
 inline void glUniformMatrix4fv(GLint, GLsizei, GLboolean, const GLfloat *) {}
 
 inline void glGenVertexArrays(GLsizei n, GLuint *arrays)
@@ -271,7 +298,11 @@ inline void glTexSubImage2D(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenu
 
 inline void glTexParameteri(GLenum, GLenum, GLint) {}
 
+inline void glReadBuffer(GLenum) {}
+
 inline void glActiveTexture(GLenum) {}
+
+inline void glCopyTexSubImage2D(GLenum, GLint, GLint, GLint, GLint, GLint, GLsizei, GLsizei) {}
 
 inline void glDrawArrays(GLenum, GLint, GLsizei) {}
 

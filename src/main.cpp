@@ -3,6 +3,7 @@
 #include "sdl_compat.h"
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <exception>
 #include <fstream>
@@ -42,12 +43,35 @@ namespace
         GLuint texture = 0;
     };
 
+    void destroyRenderTarget(RenderTarget &target)
+    {
+        if (target.framebuffer)
+        {
+            glDeleteFramebuffers(1, &target.framebuffer);
+            target.framebuffer = 0;
+        }
+        if (target.texture)
+        {
+            glDeleteTextures(1, &target.texture);
+            target.texture = 0;
+        }
+    }
+
     struct Options
     {
         int width = 1280;
         int height = 720;
         float opacity = 0.8f;
         std::vector<std::string> shaderPaths;
+    };
+
+    struct ExclusionRect
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float width = 0.0f;
+        float height = 0.0f;
+        bool valid = false;
     };
 
     constexpr std::string_view kDefaultShader = R"GLSL(
@@ -72,6 +96,37 @@ namespace
             vec3 lines = vec3(sin(uv.y * InputSize.y * 3.14159));
             float alpha = 0.75 * WindowOpacity;
             FragColor = vec4(base * (0.8 + 0.2 * lines), alpha);
+        }
+        #endif
+    )GLSL";
+
+    constexpr std::string_view kExclusionShader = R"GLSL(
+        #if defined(VERTEX)
+        layout(location = 0) in vec4 VertexCoord;
+        layout(location = 1) in vec2 TexCoord;
+        out vec2 TEX0;
+        void main() {
+            gl_Position = VertexCoord;
+            TEX0 = TexCoord;
+        }
+        #elif defined(FRAGMENT)
+        in vec2 TEX0;
+        out vec4 FragColor;
+        uniform sampler2D CurrentTexture;
+        uniform sampler2D BackgroundTexture;
+        uniform vec4 ExclusionRect;
+        uniform bool HasExclusion;
+        void main() {
+            vec4 current = texture(CurrentTexture, TEX0);
+            if (HasExclusion) {
+                vec2 minCorner = ExclusionRect.xy;
+                vec2 maxCorner = ExclusionRect.xy + ExclusionRect.zw;
+                if (TEX0.x >= minCorner.x && TEX0.x <= maxCorner.x && TEX0.y >= minCorner.y && TEX0.y <= maxCorner.y) {
+                    FragColor = texture(BackgroundTexture, TEX0);
+                    return;
+                }
+            }
+            FragColor = current;
         }
         #endif
     )GLSL";
@@ -391,6 +446,40 @@ namespace
     };
 #endif
 
+    ExclusionRect buildExclusionRect(SDL_Window *window, int captureWidth, int captureHeight)
+    {
+        ExclusionRect rect;
+        if (!window || captureWidth <= 0 || captureHeight <= 0)
+        {
+            return rect;
+        }
+
+        int windowX = 0;
+        int windowY = 0;
+        SDL_GetWindowPosition(window, &windowX, &windowY);
+
+        int windowWidth = 0;
+        int windowHeight = 0;
+        SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+
+        const float minX = static_cast<float>(windowX) / static_cast<float>(captureWidth);
+        const float minY = static_cast<float>(windowY) / static_cast<float>(captureHeight);
+        const float maxX = static_cast<float>(windowX + windowWidth) / static_cast<float>(captureWidth);
+        const float maxY = static_cast<float>(windowY + windowHeight) / static_cast<float>(captureHeight);
+
+        if (maxX <= 0.0f || maxY <= 0.0f || minX >= 1.0f || minY >= 1.0f)
+        {
+            return rect;
+        }
+
+        rect.x = std::max(0.0f, minX);
+        rect.y = std::max(0.0f, minY);
+        rect.width = std::min(1.0f, maxX) - rect.x;
+        rect.height = std::min(1.0f, maxY) - rect.y;
+        rect.valid = rect.width > 0.0f && rect.height > 0.0f;
+        return rect;
+    }
+
     Options parseArgs(int argc, char **argv)
     {
         Options options;
@@ -487,6 +576,78 @@ namespace
         }
     }
 
+    void setExclusionUniforms(const ShaderProgram &program, const ExclusionRect &rect)
+    {
+        glUseProgram(program.program);
+        const GLint currentTexture = glGetUniformLocation(program.program, "CurrentTexture");
+        if (currentTexture >= 0)
+        {
+            glUniform1i(currentTexture, 0);
+        }
+        const GLint backgroundTexture = glGetUniformLocation(program.program, "BackgroundTexture");
+        if (backgroundTexture >= 0)
+        {
+            glUniform1i(backgroundTexture, 1);
+        }
+        const GLint exclusionRect = glGetUniformLocation(program.program, "ExclusionRect");
+        if (exclusionRect >= 0)
+        {
+            glUniform4f(exclusionRect, rect.x, rect.y, rect.width, rect.height);
+        }
+        const GLint hasExclusion = glGetUniformLocation(program.program, "HasExclusion");
+        if (hasExclusion >= 0)
+        {
+            glUniform1i(hasExclusion, rect.valid ? 1 : 0);
+        }
+    }
+
+    void applyExclusionPass(const ShaderProgram &program,
+                            GLuint vao,
+                            GLuint currentTexture,
+                            GLuint backgroundTexture,
+                            const RenderTarget &target,
+                            int width,
+                            int height,
+                            const ExclusionRect &rect)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, target.framebuffer);
+        glViewport(0, 0, width, height);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, currentTexture);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, backgroundTexture);
+
+        setExclusionUniforms(program, rect);
+
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    void copyTexture(GLuint source, GLuint destination, int width, int height)
+    {
+        GLuint framebuffer = 0;
+        glGenFramebuffers(1, &framebuffer);
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, source, 0);
+
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+        glBindTexture(GL_TEXTURE_2D, destination);
+        glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteFramebuffers(1, &framebuffer);
+    }
+
     void renderPipeline(const std::vector<ShaderProgram> &pipeline,
                         const std::vector<RenderTarget> &targets,
                         GLuint vao,
@@ -561,6 +722,7 @@ int main(int argc, char **argv)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         std::vector<ShaderProgram> pipeline = buildPipeline(options);
+        ShaderProgram exclusionProgram = buildShaderProgram(std::string(kExclusionShader));
         GLuint vao = buildFullscreenVAO();
 
         const int patternWidth = options.width;
@@ -572,6 +734,8 @@ int main(int argc, char **argv)
         int sourceWidth = patternWidth;
         int sourceHeight = patternHeight;
         GLuint baseTexture = createTexture(patternWidth, patternHeight, pattern);
+        GLuint backgroundTexture = createTexture(patternWidth, patternHeight, pattern);
+        RenderTarget exclusionTarget = createRenderTarget(patternWidth, patternHeight);
 
         std::vector<RenderTarget> targets;
         for (size_t i = 0; i + 1 < pipeline.size(); ++i)
@@ -613,6 +777,10 @@ int main(int argc, char **argv)
                 {
                     glDeleteTextures(1, &baseTexture);
                     baseTexture = createTexture(captureWidth, captureHeight, captureBuffer);
+                    glDeleteTextures(1, &backgroundTexture);
+                    backgroundTexture = createTexture(captureWidth, captureHeight, captureBuffer);
+                    destroyRenderTarget(exclusionTarget);
+                    exclusionTarget = createRenderTarget(captureWidth, captureHeight);
                     sourceWidth = captureWidth;
                     sourceHeight = captureHeight;
                 }
@@ -630,12 +798,28 @@ int main(int argc, char **argv)
             {
                 glDeleteTextures(1, &baseTexture);
                 baseTexture = createTexture(patternWidth, patternHeight, pattern);
+                glDeleteTextures(1, &backgroundTexture);
+                backgroundTexture = createTexture(patternWidth, patternHeight, pattern);
+                destroyRenderTarget(exclusionTarget);
+                exclusionTarget = createRenderTarget(patternWidth, patternHeight);
                 sourceWidth = patternWidth;
                 sourceHeight = patternHeight;
             }
 
-            renderPipeline(pipeline, targets, vao, baseTexture, options.width, options.height, frameCount, options.opacity,
-                           sourceWidth, sourceHeight);
+            ExclusionRect exclusion = buildExclusionRect(window, sourceWidth, sourceHeight);
+            GLuint processedTexture = baseTexture;
+
+            if (exclusion.valid)
+            {
+                applyExclusionPass(exclusionProgram, vao, baseTexture, backgroundTexture, exclusionTarget, sourceWidth,
+                                   sourceHeight, exclusion);
+                processedTexture = exclusionTarget.texture;
+            }
+
+            copyTexture(processedTexture, backgroundTexture, sourceWidth, sourceHeight);
+
+            renderPipeline(pipeline, targets, vao, processedTexture, options.width, options.height, frameCount,
+                           options.opacity, sourceWidth, sourceHeight);
             SDL_GL_SwapWindow(window);
             frameCount++;
         }
@@ -645,11 +829,14 @@ int main(int argc, char **argv)
             glDeleteFramebuffers(1, &target.framebuffer);
             glDeleteTextures(1, &target.texture);
         }
+        destroyRenderTarget(exclusionTarget);
+        glDeleteTextures(1, &backgroundTexture);
         glDeleteTextures(1, &baseTexture);
         for (const auto &program : pipeline)
         {
             glDeleteProgram(program.program);
         }
+        glDeleteProgram(exclusionProgram.program);
         glDeleteVertexArrays(1, &vao);
 
         SDL_GL_DeleteContext(context);
