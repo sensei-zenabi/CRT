@@ -19,6 +19,7 @@ using GLboolean = unsigned char;
 using GLfloat = float;
 using GLchar = char;
 using GLsizeiptr = std::ptrdiff_t;
+using Uint32 = std::uint32_t;
 
 struct SDL_Window
 {
@@ -28,6 +29,7 @@ constexpr std::uint32_t SDL_INIT_VIDEO = 0x00000020u;
 constexpr int SDL_WINDOWPOS_CENTERED = 0;
 constexpr std::uint32_t SDL_WINDOW_OPENGL = 0x00000002u;
 constexpr std::uint32_t SDL_WINDOW_RESIZABLE = 0x00000020u;
+constexpr std::uint32_t SDL_WINDOW_FULLSCREEN_DESKTOP = 0x01001000u;
 
 enum SDL_GLattr
 {
@@ -66,6 +68,15 @@ struct SDL_Event
 {
     std::uint32_t type;
     SDL_WindowEvent window;
+};
+
+struct SDL_DisplayMode
+{
+    std::uint32_t format = 0u;
+    int w = 0;
+    int h = 0;
+    int refresh_rate = 0;
+    void *driverdata = nullptr;
 };
 
 inline int SDL_Init(std::uint32_t)
@@ -138,6 +149,15 @@ inline void SDL_GetWindowSize(SDL_Window *, int *w, int *h)
 
 inline int SDL_PollEvent(SDL_Event *)
 {
+    return 0;
+}
+
+inline int SDL_GetDesktopDisplayMode(int, SDL_DisplayMode *mode)
+{
+    if (mode)
+    {
+        *mode = SDL_DisplayMode{};
+    }
     return 0;
 }
 
