@@ -317,6 +317,11 @@ namespace
             }
         }
 
+        bool canHideWindow() const
+        {
+            return display_ != nullptr;
+        }
+
         bool grab(std::vector<std::uint8_t> &buffer, int &width, int &height)
         {
             if (!display_)
@@ -384,6 +389,11 @@ namespace
     class ScreenCapture
     {
     public:
+        bool canHideWindow() const
+        {
+            return false;
+        }
+
         bool grab(std::vector<std::uint8_t> &, int &, int &)
         {
             return false;
@@ -572,6 +582,7 @@ int main(int argc, char **argv)
         int sourceWidth = patternWidth;
         int sourceHeight = patternHeight;
         GLuint baseTexture = createTexture(patternWidth, patternHeight, pattern);
+        const bool hideForCapture = capture.canHideWindow();
 
         std::vector<RenderTarget> targets;
         for (size_t i = 0; i + 1 < pipeline.size(); ++i)
@@ -604,7 +615,21 @@ int main(int argc, char **argv)
 
             int captureWidth = 0;
             int captureHeight = 0;
+
+            if (hideForCapture)
+            {
+                SDL_SetWindowOpacity(window, 0.0f);
+#if CRT_HAS_X11
+                XSync(nullptr, False);
+#endif
+            }
+
             bool captured = capture.grab(captureBuffer, captureWidth, captureHeight);
+
+            if (hideForCapture)
+            {
+                SDL_SetWindowOpacity(window, options.opacity);
+            }
 
             if (captured)
             {
