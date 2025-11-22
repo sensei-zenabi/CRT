@@ -59,8 +59,8 @@ namespace
 
     struct Options
     {
-        int width = 1280;
-        int height = 720;
+        int width = 0;
+        int height = 0;
         float opacity = 0.8f;
         std::vector<std::string> shaderPaths;
     };
@@ -707,8 +707,24 @@ int main(int argc, char **argv)
 
         SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
 
+        SDL_DisplayMode desktopMode{};
+        if (options.width <= 0 || options.height <= 0)
+        {
+            if (SDL_GetDesktopDisplayMode(0, &desktopMode) == 0 && desktopMode.w > 0 && desktopMode.h > 0)
+            {
+                options.width = desktopMode.w;
+                options.height = desktopMode.h;
+            }
+            else
+            {
+                options.width = options.width <= 0 ? 1280 : options.width;
+                options.height = options.height <= 0 ? 720 : options.height;
+            }
+        }
+
+        const Uint32 windowFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN_DESKTOP;
         SDL_Window *window = SDL_CreateWindow("Shaderglass CRT", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                              options.width, options.height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+                                              options.width, options.height, windowFlags);
         sdlCheck(window != nullptr, "SDL_CreateWindow failed");
 
         sdlCheck(SDL_SetWindowOpacity(window, options.opacity) == 0, "SDL_SetWindowOpacity failed");
