@@ -230,13 +230,13 @@ namespace
     GLuint buildFullscreenVAO()
     {
         std::array<float, 36> vertices = {
-            // positions      // tex coords
-            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-             1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
-             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -1.0f,  1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+            // positions      // tex coords (flipped vertically so capture is upright)
+            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+             1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+            -1.0f,  1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
         };
 
         GLuint vao = 0;
@@ -766,9 +766,22 @@ int main(int argc, char **argv)
                 }
             }
 
+            const Uint32 windowFlags = SDL_GetWindowFlags(window);
+            const bool wasVisible = (windowFlags & SDL_WINDOW_SHOWN) != 0;
+            if (wasVisible)
+            {
+                SDL_HideWindow(window);
+            }
+
             int captureWidth = 0;
             int captureHeight = 0;
             bool captured = capture.grab(captureBuffer, captureWidth, captureHeight);
+
+            if (wasVisible)
+            {
+                SDL_ShowWindow(window);
+                SDL_SetWindowOpacity(window, options.opacity);
+            }
 
             if (captured)
             {

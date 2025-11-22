@@ -9,6 +9,7 @@
 #include <cstdint>
 
 // Minimal SDL/OpenGL compatibility layer to allow building without the SDL2 development package.
+using Uint32 = std::uint32_t;
 using SDL_GLContext = void *;
 
 using GLenum = unsigned int;
@@ -25,6 +26,7 @@ struct SDL_Window
 };
 
 constexpr std::uint32_t SDL_INIT_VIDEO = 0x00000020u;
+constexpr std::uint32_t SDL_WINDOW_SHOWN = 0x00000004u;
 constexpr int SDL_WINDOWPOS_CENTERED = 0;
 constexpr std::uint32_t SDL_WINDOW_OPENGL = 0x00000002u;
 constexpr std::uint32_t SDL_WINDOW_RESIZABLE = 0x00000020u;
@@ -140,6 +142,15 @@ inline int SDL_PollEvent(SDL_Event *)
 {
     return 0;
 }
+
+inline Uint32 SDL_GetWindowFlags(SDL_Window *)
+{
+    return SDL_WINDOW_SHOWN;
+}
+
+inline void SDL_HideWindow(SDL_Window *) {}
+
+inline void SDL_ShowWindow(SDL_Window *) {}
 
 constexpr GLenum GL_VERTEX_SHADER = 0x8B31;
 constexpr GLenum GL_FRAGMENT_SHADER = 0x8B30;
