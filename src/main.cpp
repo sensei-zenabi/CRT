@@ -478,11 +478,6 @@ namespace
         rect.height = std::min(1.0f, maxY) - rect.y;
         rect.valid = rect.width > 0.0f && rect.height > 0.0f;
 
-        // Avoid masking out the entire capture when the window matches the desktop size (e.g. fullscreen).
-        if (rect.valid && rect.x <= 0.0f && rect.y <= 0.0f && rect.width >= 0.999f && rect.height >= 0.999f)
-        {
-            rect.valid = false;
-        }
         return rect;
     }
 
