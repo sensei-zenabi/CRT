@@ -581,7 +581,6 @@ int main(int argc, char **argv)
 
         bool running = true;
         int frameCount = 0;
-        bool hideFailureLogged = false;
         while (running)
         {
             SDL_Event event;
@@ -603,19 +602,20 @@ int main(int argc, char **argv)
                 }
             }
 
-            const bool windowHidden = SDL_SetWindowOpacity(window, 0.0f) == 0;
-            if (!windowHidden && !hideFailureLogged)
+            const Uint32 windowFlags = SDL_GetWindowFlags(window);
+            const bool wasVisible = (windowFlags & SDL_WINDOW_SHOWN) != 0;
+            if (wasVisible)
             {
-                std::cerr << "Warning: Unable to hide window during capture: " << SDL_GetError() << "\n";
-                hideFailureLogged = true;
+                SDL_HideWindow(window);
             }
 
             int captureWidth = 0;
             int captureHeight = 0;
             bool captured = capture.grab(captureBuffer, captureWidth, captureHeight);
 
-            if (windowHidden)
+            if (wasVisible)
             {
+                SDL_ShowWindow(window);
                 SDL_SetWindowOpacity(window, options.opacity);
             }
 
