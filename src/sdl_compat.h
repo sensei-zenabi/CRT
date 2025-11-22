@@ -202,6 +202,8 @@ inline void glUseProgram(GLuint) {}
 
 inline void glUniform1i(GLint, GLint) {}
 
+inline void glUniform1f(GLint, GLfloat) {}
+
 inline void glUniform2f(GLint, GLfloat, GLfloat) {}
 
 inline void glUniformMatrix4fv(GLint, GLsizei, GLboolean, const GLfloat *) {}
@@ -291,5 +293,9 @@ inline int SDL_SetWindowOpacity(SDL_Window *, float)
 {
     return 0;
 }
+
+inline void SDL_SetHint(const char *, const char *) {}
+
+constexpr const char *SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR = "SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR";
 
 #endif

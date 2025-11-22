@@ -25,6 +25,7 @@ namespace
         GLint frameCountUniform = -1;
         GLint frameDirectionUniform = -1;
         GLint mvpUniform = -1;
+        GLint opacityUniform = -1;
     };
 
     struct RenderTarget
@@ -56,11 +57,13 @@ namespace
         out vec4 FragColor;
         uniform sampler2D Texture;
         uniform vec2 InputSize;
+        uniform float WindowOpacity;
         void main() {
             vec2 uv = TEX0;
             vec3 base = texture(Texture, uv).rgb;
             vec3 lines = vec3(sin(uv.y * InputSize.y * 3.14159));
-            FragColor = vec4(base * (0.8 + 0.2 * lines), 0.75);
+            float alpha = 0.75 * WindowOpacity;
+            FragColor = vec4(base * (0.8 + 0.2 * lines), alpha);
         }
         #endif
     )GLSL";
@@ -150,6 +153,7 @@ namespace
         wrapped.frameCountUniform = glGetUniformLocation(program, "FrameCount");
         wrapped.frameDirectionUniform = glGetUniformLocation(program, "FrameDirection");
         wrapped.mvpUniform = glGetUniformLocation(program, "MVPMatrix");
+        wrapped.opacityUniform = glGetUniformLocation(program, "WindowOpacity");
 
         return wrapped;
     }
@@ -299,7 +303,7 @@ namespace
         return pipeline;
     }
 
-    void setCommonUniforms(const ShaderProgram &program, int width, int height, int frameCount, int inputWidth, int inputHeight)
+    void setCommonUniforms(const ShaderProgram &program, int width, int height, int frameCount, int inputWidth, int inputHeight, float windowOpacity)
     {
         glUseProgram(program.program);
         if (program.textureUniform >= 0)
@@ -334,6 +338,10 @@ namespace
                                                     0.0f, 0.0f, 0.0f, 1.0f};
             glUniformMatrix4fv(program.mvpUniform, 1, GL_FALSE, identity.data());
         }
+        if (program.opacityUniform >= 0)
+        {
+            glUniform1f(program.opacityUniform, windowOpacity);
+        }
     }
 
     void renderPipeline(const std::vector<ShaderProgram> &pipeline,
@@ -342,7 +350,8 @@ namespace
                         GLuint baseTexture,
                         int width,
                         int height,
-                        int frameCount)
+                        int frameCount,
+                        float windowOpacity)
     {
         GLuint inputTexture = baseTexture;
         int inputWidth = width;
@@ -363,7 +372,7 @@ namespace
             glBindTexture(GL_TEXTURE_2D, inputTexture);
 
             const ShaderProgram &program = pipeline[index];
-            setCommonUniforms(program, width, height, frameCount, inputWidth, inputHeight);
+            setCommonUniforms(program, width, height, frameCount, inputWidth, inputHeight, windowOpacity);
 
             glBindVertexArray(vao);
             glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -391,6 +400,8 @@ int main(int argc, char **argv)
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+
+        SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
 
         SDL_Window *window = SDL_CreateWindow("Shaderglass CRT", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                               options.width, options.height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
@@ -443,7 +454,7 @@ int main(int argc, char **argv)
                 }
             }
 
-            renderPipeline(pipeline, targets, vao, baseTexture, options.width, options.height, frameCount);
+            renderPipeline(pipeline, targets, vao, baseTexture, options.width, options.height, frameCount, options.opacity);
             SDL_GL_SwapWindow(window);
             frameCount++;
         }
