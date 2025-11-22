@@ -1,6 +1,6 @@
 CXX ?= g++
-CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic $(shell pkg-config --cflags sdl2 2>/dev/null)
-LDFLAGS ?= $(shell pkg-config --libs sdl2 2>/dev/null) -lGL
+CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic $(shell pkg-config --cflags sdl2 gl 2>/dev/null)
+LDFLAGS ?= $(shell pkg-config --libs sdl2 gl 2>/dev/null)
 
 TARGET := crt
 SOURCES := $(wildcard src/*.cpp)

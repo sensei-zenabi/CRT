@@ -1,7 +1,6 @@
 #define GL_GLEXT_PROTOTYPES 1
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_opengl.h>
+#include "sdl_compat.h"
 
 #include <array>
 #include <cstdint>
@@ -162,7 +161,7 @@ namespace
 
     GLuint buildFullscreenVAO()
     {
-        std::array<float, 30> vertices = {
+        std::array<float, 36> vertices = {
             // positions      // tex coords
             -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
              1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
