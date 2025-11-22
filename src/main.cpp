@@ -175,13 +175,13 @@ namespace
     GLuint buildFullscreenVAO()
     {
         std::array<float, 36> vertices = {
-            // positions      // tex coords
-            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-             1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
-             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
-            -1.0f,  1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+            // positions      // tex coords (flipped vertically so capture is upright)
+            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+             1.0f, -1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+            -1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+             1.0f,  1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+            -1.0f,  1.0f, 0.0f, 1.0f, 0.0f, 0.0f,
         };
 
         GLuint vao = 0;
@@ -581,6 +581,7 @@ int main(int argc, char **argv)
 
         bool running = true;
         int frameCount = 0;
+        bool hideFailureLogged = false;
         while (running)
         {
             SDL_Event event;
@@ -602,9 +603,21 @@ int main(int argc, char **argv)
                 }
             }
 
+            const bool windowHidden = SDL_SetWindowOpacity(window, 0.0f) == 0;
+            if (!windowHidden && !hideFailureLogged)
+            {
+                std::cerr << "Warning: Unable to hide window during capture: " << SDL_GetError() << "\n";
+                hideFailureLogged = true;
+            }
+
             int captureWidth = 0;
             int captureHeight = 0;
             bool captured = capture.grab(captureBuffer, captureWidth, captureHeight);
+
+            if (windowHidden)
+            {
+                SDL_SetWindowOpacity(window, options.opacity);
+            }
 
             if (captured)
             {
